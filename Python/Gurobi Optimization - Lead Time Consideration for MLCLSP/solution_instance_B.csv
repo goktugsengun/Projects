@@ -1,0 +1,9 @@
+Machine,Period,Items
+1,1,"Item_5, Item_7, Item_8, Item_9, Item_10"
+1,2,"Item_3, Item_5, Item_8, Item_9, Item_10"
+1,3,"Item_3, Item_5, Item_8, Item_9, Item_10"
+1,4,"Item_3, Item_5, Item_8, Item_9, Item_10"
+3,1,"Item_1, Item_2, Item_3, Item_4, Item_6"
+3,2,"Item_1, Item_2, Item_4, Item_6, Item_7"
+3,3,"Item_1, Item_2, Item_4, Item_6, Item_7"
+3,4,"Item_1, Item_2, Item_4, Item_6, Item_7"

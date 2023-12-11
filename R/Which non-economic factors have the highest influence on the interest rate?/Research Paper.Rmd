@@ -1,0 +1,550 @@
+---
+title: "Which non-economic factors have the highest influence on the interest rate?"
+author: "Recep Göktuğ Şengün, Miguel Leon Cornejo, Nico Kusserow"
+date: "`r Sys.Date()`"
+output: rmdformats::downcute
+runtime: shiny_prerendered
+--- 
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+library(shiny)
+library(datasets)
+library(tidyverse)
+library(DescTools)
+library(gt)
+library(ggplot2)
+
+data <- read.csv("/Users/miguelleon/Uni/Viadrina/Semester 2/Data Story Telling in Finance/Data_Seminar_2022/FMFM2019_seminar.csv")
+data <- as_tibble(data)
+
+```
+
+# **Introduction**
+
+Many people dream of owning their own house throughout their lifetime. But to do so often times a loan is the only way to make this dream come true. The interest rate for such a loan is heavily dependent on two major factors. On one hand macro-economic factors such as the overall economic situation or certain trends can have a huge influence – as we have seen in the past few years with really low interest rates overall. On the other hand, economic factors on the personal level of the borrower, such as the net worth or the amount of income, will as well determine the final interest rate.  
+
+**But is there something more to it? Something, that cannot be seen immediately?** 
+
+In this study we aim at finding out which of the non-economic factors have the highest influence on the interest rate. This will be done analyzing loan data from Fannie Mae and Freddie Mac, two of the largest federally backed home mortgage companies in the U.S.A. Not only is this important to know for people planning on applying for a loan, but also to understand the business practice of those companies. 
+
+Therefore, we would like to take you with us through our exploration journey and equip you with important knowledge! 
+
+# **EDA**
+
+### *Structure of the Data*
+
+We can already see that most of our columns are of type numeric and character and checked the correctness of data with a familiar Program (Excel). At the beginning of our work, the data set has one million observations and a total of 64 attributes.
+
+### *Declutter the rows/ columns*
+
+After looking at the structure of our dataset, in the next step we analyzed and cleaned the data of missing and irrelevant values. For this part it is necessary to look at the statements in the *Data Dictionary of the Federal Housing Finance Agency*. It can be seen that numbers were used to indicate `NA` values.
+
+After this step, of course, the missing and unique values must be determined and marked. The values to be adjusted in the groups were then removed from the data set. 
+  
+## **Challenge 1**
+
+As a first challenge, we had to look at the field descriptions of our data to understand them correctly. By looking at our data we noticed that NA values are represented with various numbers for different variables. For example, while `9` means NA for variable A, it contains a different information for variable B. Therefore, we had to scrutinize the variables manually to make sure we detect all missing values. 
+
+```{r example1, collapse = TRUE}
+#1#"0"  where?: c(3,4,5,6,36)
+data[,c(3:6,36)][data[,c(3:6,36)] == 0] <- NA
+#2# "9999" where?: c(4,7,10,13)
+data[,c(4,7,10,13)][data[,c(4,7,10,13)] == 9999] <- NA
+#3# 999999  where?: c(8,9,12,54)
+data[,c(8,9,12,54)][data[,c(8,9,12,54)] == 999999] <- NA
+#4# 999999999 where?: c(11,14,47,57)
+data[,c(11,14,47,57)][data[,c(11,14,47,57)] == 999999999] <- NA
+#5# 9 where?: c(15,18:35,37,38,40,41,43,48:52,56)
+data[,c(15,18:35,37,38,40,41,43,48:52,56)][data[,c(15,18:35,37,38,40,41,43,48:52,56)] == 9] <- NA
+#6# 99 where?: c(17,46,51:53)
+data[,c(17,46,51:53)][data[,c(17,46,51:53)] == 99] <- NA
+#7# 7 where?: c(19:23,25:29)
+data[,c(19:23,25:29)][data[,c(19:23,25:29)] == 7] <- NA
+#8# 6 where?: c(19:23,25:29,50)
+data[,c(19:23,25:29,50)][data[,c(19:23,25:29,50)] == 6] <- NA
+#9# 4 where?: c(24,30:32,39)
+data[,c(24,30:32,39)][data[,c(24,30:32,39)] == 4] <- NA
+#10# 3 where?: c(24,30:32)
+data[,c(24,30:32)][data[,c(24,30:32)] == 3] <- NA
+#11# 8 where?: c(25:29)
+data[,c(25:29)][data[,c(25:29)] == 8] <- NA
+#12# 5 where?: c(30,32,56)
+data[,c(30,32,56)][data[,c(30,32,56)] == 5] <- NA
+#13# 999 where?: c(42,44,55)
+data[,c(42,44,55)][data[,c(42,44,55)] == 999] <- NA
+```
+
+```{r}
+na_rows <- apply(is.na(data),1,sum)/ncol(data)
+data <- data[-which.max(na_rows),]
+```
+
+The rows which contained `NA` values for the variable *Interest.Rate.at.Origination* were removed, since they provided no further insights for our research question.
+```{r}
+data <- data %>% drop_na(Interest.Rate.at.Origination)
+```
+
+```{r}
+missing_vals <- as.matrix(data %>% is.na %>% colSums)
+missing_vals_rel <- round(100*missing_vals/nrow(data),2)
+```
+
+```{r}
+unique_vals <- t(as.matrix(data %>% summarise_all(n_distinct)))
+unique_vals_rel <-  round(100*unique_vals/nrow(data),2)
+```
+
+The table below visualizes the different variables together with their corresponding percentage of NA values. We set the threshold to 75 % to have a consistent base of variables for our analysis.
+
+```{r, fig.height=10}
+data_summary <- data.frame(colnames(data), missing_vals, missing_vals_rel, unique_vals, unique_vals_rel)
+colnames(data_summary) <- c("column_names", "NAs", "NAs_rel", "Unique", "Unique_rel")
+
+data_summary <- data_summary %>% arrange(desc(NAs_rel))
+
+ggplot(data_summary, aes(x = NAs_rel, y=column_names)) + geom_point(color = "blue") + 
+  labs(title= "NA percentages per column", x= "% of NA's", y = "Columns")  + 
+  geom_vline(xintercept=75, color = "red", size = 1)
+```
+
+```{r}
+# With data summary we can see the columns with and their number of NA values, 
+#NA percentage, Unique and Unique value percentages.
+
+# The fields with only one value:
+one_unique <- rownames(data_summary)[which(data_summary$Unique==1)]
+# The fields that are completely NA
+full_NA <- rownames(data_summary)[which(data_summary$NAs_rel==100)] 
+# Rule for filtering the fields with high number of NA values.
+high_NA <- rownames(data_summary)[which(data_summary$NAs_rel>75&data_summary$NAs_rel<100)] 
+
+col_del_ind <- match(unique(c(one_unique,full_NA,high_NA)),colnames(data))
+data <- data[,-col_del_ind]
+```
+
+**Columns that are dropped:**
+
+* Columns with only one unique value:
+  + `HOEPA.Status`
+  + `Lien.Status`
+* Columns with only NA values:
+  + `Borrower.Race5`
+  + `Co.Borrower.Race4`
+  + `Co.Borrower.Race5`
+* Columns with higher number of NA values:
+  + `Borrower.Race4`                       
+  + `Co.Borrower.Race3`                     
+  + `Borrower.Race3`                  
+  + `Manufactured.Home...Land.Property.Interest`
+  + `Introductory.Rate.Period`              
+  + `Co.Borrower.Race2`               
+  + `Borrower.Race2`                    
+  + `Rate.Spread`
+
+After our examination of the NA values, we were able to exclude 13 variables. Accordingly, our processed data set has **51 variables** and **999.926 observations**.
+
+## **Challenge 2**
+
+### *Finding variables*
+
+After cleaning the data set, it was now necessary to choose a selection of variables that have a significant influence on our dependent variable. Further the selection of these variables included, in addition to the cleaning of the data, a consideration of whether the data at hand were economic or non-economic.
+
+We selected 12 independent variables and interest_rate our dependent variable. By definition, non-economic variables have no economic importance or implication. 
+
+The following displayed variables form the basis of our research. For a better overview and further simplification, we have divided these variables into different clusters:
+
+### *Variable Clustering*
+
+**Borrower Personal \n Information**   | **Geographical \n Information** | **Loan Related \n Information** | **Property \n Information** 
+----------------- | ---------------------- | ---------------------- | -------------------
+Borrower.Race1         | Metropolitan.Statistical.Area..MSA..Code | Purpose.of.Loan | Occupancy.Code
+Borrower.Ethnicity         | Rural.Census.Tract | Application.Channel | Property.Type
+Co.Borrower.Race1        | |
+Co.Borrower.Ethnicity    |  |  
+Borrower.Gender         | |
+Co.Borrower.Gender       |  |
+Age.of.Borrower       | |
+Age.of.Co.Borrower       | |
+Borrower.Age.62.or.older    | |    
+Co.Borrower.Age.62.or.older   | | 
+
+
+What becomes apparent upon closer inspection of our data is that only the interest rate shows a numerical scaling. Unfortunately, the variable age is also categorically scaled like the other data. This of course limits the scope of possible analysis methods, related to correlations.
+
+In order to proceed with our analysis, we converted categorical variables into factor variables.
+
+After selecting our possible independent variables, we found that some variables were not useful. For five characteristics which are:
+
+ -	“Co.Borrower.Race1”
+ -	“Co.Borrower.Ethnicity”
+ -	“Co.Borrower.Gender”
+ -	“Age.of.Co.Borrower”
+ -	“Co.Borrower.Age.62.or.older”
+
+the analysis shows that the NA values were still very high. Since they have very similar characteristics with other variables, we decided to exclude these variables from our further analysis. 
+
+```{r}
+data <- data %>% select(c("Interest.Rate.at.Origination", 
+                          "Number.of.Borrowers",
+                          "Borrower.Race1",
+                          "Borrower.Ethnicity",
+                          "Co.Borrower.Race1", 
+                          "Co.Borrower.Ethnicity",
+                          "Borrower.Gender",
+                          "Co.Borrower.Gender",
+                          "Age.of.Borrower",
+                          "Age.of.Co.Borrower",    
+                          "Borrower.Age.62.or.older",
+                          "Co.Borrower.Age.62.or.older", 
+                          "Metropolitan.Statistical.Area..MSA..Code",
+                          "Rural.Census.Tract",
+                          "Purpose.of.Loan",
+                          "Application.Channel",
+                          "Occupancy.Code",
+                          "Property.Type"))
+
+data <- data %>% select(-c("Co.Borrower.Race1",
+                           "Co.Borrower.Ethnicity",
+                           "Co.Borrower.Gender",
+                           "Age.of.Co.Borrower",
+                           "Co.Borrower.Age.62.or.older"))
+```
+
+```{r}
+getmode <- function(v) {
+  uniqv <- unique(v)
+  uniqv[which.max(tabulate(match(v, uniqv)))]
+}
+```
+ 
+```{r}
+data <- data %>% mutate(Number.of.Borrowers = if_else(is.na(Number.of.Borrowers), getmode(Number.of.Borrowers), Number.of.Borrowers),
+                        Borrower.Race1 = if_else(is.na(Borrower.Race1), getmode(Borrower.Race1), Borrower.Race1),
+                        Borrower.Ethnicity = if_else(is.na(Borrower.Ethnicity), getmode(Borrower.Ethnicity), Borrower.Ethnicity),
+                        Borrower.Gender = if_else(is.na(Borrower.Gender), getmode(Borrower.Gender), Borrower.Gender),
+                        Age.of.Borrower = if_else(is.na(Age.of.Borrower), getmode(Age.of.Borrower), Age.of.Borrower),
+                        Borrower.Age.62.or.older = if_else(is.na(Borrower.Age.62.or.older), getmode(Borrower.Age.62.or.older), Borrower.Age.62.or.older),
+                        Metropolitan.Statistical.Area..MSA..Code = if_else(is.na(Metropolitan.Statistical.Area..MSA..Code), getmode(Metropolitan.Statistical.Area..MSA..Code), Metropolitan.Statistical.Area..MSA..Code),
+                        Rural.Census.Tract = if_else(is.na(Rural.Census.Tract), getmode(Rural.Census.Tract), Rural.Census.Tract),
+                        Purpose.of.Loan = if_else(is.na(Purpose.of.Loan), getmode(Purpose.of.Loan), Purpose.of.Loan),
+                        Application.Channel = if_else(is.na(Application.Channel), getmode(Application.Channel), Application.Channel),
+                        Occupancy.Code = if_else(is.na(Occupancy.Code), getmode(Occupancy.Code), Occupancy.Code),
+                        Property.Type = if_else(is.na(Property.Type), getmode(Property.Type), Property.Type)
+)
+```
+
+```{r}
+data <- data %>% mutate(metropolitan_area = ifelse(Metropolitan.Statistical.Area..MSA..Code == 99999, 0, 1)) %>% 
+  select(-c(Metropolitan.Statistical.Area..MSA..Code))
+```
+
+```{r}
+data$Number.of.Borrowers <- as.factor(data$Number.of.Borrowers)
+data$Borrower.Race1 <- as.factor(data$Borrower.Race1)
+data$Borrower.Ethnicity <- as.factor(data$Borrower.Ethnicity)
+data$Borrower.Gender <- as.factor(data$Borrower.Gender)
+data$Age.of.Borrower <- as.factor(data$Age.of.Borrower)
+data$Borrower.Age.62.or.older <- as.factor(data$Borrower.Age.62.or.older)
+data$metropolitan_area <-  as.factor(data$metropolitan_area)
+data$Rural.Census.Tract <-  as.factor(data$Rural.Census.Tract)
+data$Purpose.of.Loan <-  as.factor(data$Purpose.of.Loan)
+data$Application.Channel <-  as.factor(data$Application.Channel)
+data$Occupancy.Code <-  as.factor(data$Occupancy.Code)
+data$Property.Type <-  as.factor(data$Property.Type)
+```
+
+Now let's have a look at the size of our data set after processing our challenges.
+
+*The structure of our data after handling the Challenges:*
+```{r}
+dim <- c("Number of Columns", "Number of Rows")
+val <- c(ncol(data), nrow(data))
+
+dims <- data.frame(dim, val)
+
+gt(dims) %>% tab_header(title = "Data Structure") %>% 
+  cols_label(dim = md("**Dimension**"), 
+             val = md("**Observations**"))
+```
+
+# **Data Storytelling**
+
+After working out our target data, we conducted our analysis with 12 independent, categorical variables as shown in the diagram before, and our dependent, numerical variable.
+
+## **Finding 1**
+
+In order to find out how a non-economic factor can influence the interest rate we explored the relationships between the different factors of a chosen variable and the interest rate. Here shown with boxplot graphs for the independent variables.
+
+```{r}
+plot_data_column <- function (data, column, target) {
+  if(is.factor(data[[target]])){
+    if(is.numeric(data[[column]])){
+      plotlimbox <- quantile(data[[column]],c(0.1,0.9),na.rm=TRUE) 
+      ggplot(data, aes_string(x=target, y=column)) +
+        geom_boxplot(outlier.shape = NA) +
+        scale_y_continuous(limits = plotlimbox) +
+        theme(legend.position = "none")
+    }else{
+      ggplot(data,aes_string(x=column,fill=target)) +
+        geom_bar(position="fill") +
+        theme(legend.position = "none")
+    }
+  }else{
+    if(is.numeric(data[[column]])){
+      plotlimscalex <- ifelse(min(data[[column]])==0,quantile(data[[column]],c(0,0.9999),na.rm=TRUE),quantile(data[[column]],c(0.0001,0.9999),na.rm=TRUE)) # as we have often data which starts with 0 and has a lot of 0's
+      plotlimscaley <- ifelse(min(data[[target]])==0,quantile(data[[target]],c(0,0.9999),na.rm=TRUE),quantile(data[[target]],c(0.0001,0.9999),na.rm=TRUE))
+      ggplot(data,aes_string(x=column,y=target)) +
+        geom_point() +
+        scale_y_continuous(limits = plotlimscaley) +
+        scale_x_continuous(limits = plotlimscalex) +
+        theme(legend.position = "none")
+    }else{
+      plotlimbox <- quantile(data[[target]],c(0.1,0.9),na.rm=TRUE) 
+      ggplot(data, aes_string(x=column, y=target)) +
+        geom_boxplot(outlier.shape = NA) +
+        scale_y_continuous(limits = plotlimbox) +
+        theme(legend.position = "none")
+    }
+  }
+}
+```
+
+### *Relationships* {.tabset}
+#### Number of Borrowers
+
+```{r Number of Borrowers, warning=FALSE, message=FALSE, eval=T, fig.align = 'center'}
+plot_data_column(data, "Number.of.Borrowers", "Interest.Rate.at.Origination") +
+  labs(title= "The Effect of the Number of Borrowers", x= "Number of Borrowers", 
+       y = "Interest Rate in %")
+```
+
+#### Borrower Race
+
+```{r Borrower Race, warning=FALSE, message=FALSE, eval=T, fig.align = 'center'}
+plot_data_column(data, "Borrower.Race1", "Interest.Rate.at.Origination") +
+  labs(title= "The Effect of Borrower's Race", x= "Borrower's Race", 
+       y = "Interest Rate in %") + 
+  scale_x_discrete(labels = c('American Indian or \n Alaska Native',
+                              'Asian',
+                              'Black or \n African American', 
+                              'Native Hawaiian or \n Other Pacific Islander',
+                              'White'))
+```
+
+#### Borrower Ethnicity
+
+```{r Borrower Ethnicity, warning=FALSE, message=FALSE, eval=T, fig.align = 'center'}
+plot_data_column(data, "Borrower.Ethnicity", "Interest.Rate.at.Origination") + 
+  labs(title= "The Effect of Borrower's Ethnicity", x= "Borrower's Ethnicity", 
+       y = "Interest Rate in %") + 
+  scale_x_discrete(labels = c('Hispanic or \n Latino', 'Other'))
+```
+
+#### Borrower Gender
+
+```{r Borrower Gender, warning=FALSE, message=FALSE, eval=T, fig.align = 'center'}
+plot_data_column(data, "Borrower.Gender", "Interest.Rate.at.Origination") + 
+  labs(title= "The Effect of Borrower's Gender", x= "Borrower's Gender", 
+       y = "Interest Rate in %") + 
+  scale_x_discrete(labels = c('Male', 'Female'))
+```
+
+#### Age of Borrower
+
+```{r Age of Borrower, warning=FALSE, message=FALSE, eval=T, fig.align = 'center'}
+plot_data_column(data, "Age.of.Borrower", "Interest.Rate.at.Origination") + 
+  labs(title= "The Effect of Borrower's Age", x= "Borrower's Age", 
+       y = "Interest Rate in %") + 
+  scale_x_discrete(labels = c('<25', '25-30', '35-44', '45-54', '55-64', '65-74', '>75'))
+```
+
+#### Borrower Age 62 or older
+
+```{r Borrower Age 62 or older, warning=FALSE, message=FALSE, eval=T, fig.align = 'center'}
+plot_data_column(data, "Borrower.Age.62.or.older", "Interest.Rate.at.Origination") + 
+  labs(title= "The Effect of 62 years", x= "Borrower's Age", 
+       y = "Interest Rate in %") + 
+  scale_x_discrete(labels = c('<62', '>=62'))
+```
+
+#### Metropolitan Area
+
+```{r Metropolitan Area, warning=FALSE, message=FALSE, eval=T, fig.align = 'center'}
+plot_data_column(data, "metropolitan_area", "Interest.Rate.at.Origination") + 
+  labs(title= "The Effect of Metropolitan Location", x= "Borrower's Location", 
+       y = "Interest Rate in %") + 
+  scale_x_discrete(labels = c('Non-Metropolitan \n Area', 'Metropolitan \n Area'))
+```
+
+#### Rural Census Tract
+
+```{r Rural Census Tract, warning=FALSE, message=FALSE, eval=T, fig.align = 'center'}
+plot_data_column(data, "Rural.Census.Tract", "Interest.Rate.at.Origination") + 
+  labs(title= "The Effect of Rural Location", x= "Borrower's Location", 
+       y = "Interest Rate in %") + 
+  scale_x_discrete(labels = c('Non-Rural \n Area', 'Rural \n Area'))
+```
+
+#### Purpose of Loan
+
+```{r Purpose of Loan, warning=FALSE, message=FALSE, eval=T, fig.align = 'center'}
+plot_data_column(data, "Purpose.of.Loan", "Interest.Rate.at.Origination") + 
+  labs(title= "The Effect of Purpose of Loan", x= "Purpose of Loan", 
+       y = "Interest Rate in %") + 
+  scale_x_discrete(labels = c('Purchase', 'Refinancing \n (not cash-out or \n unknown type of \n refinancing', 
+                              'Home Improvement \n Rehabilitation',
+                              'Refinancing \n (cash-out)'))
+```
+
+#### Application Channel
+
+```{r Application Channel, warning=FALSE, message=FALSE, eval=T, fig.align = 'center'}
+plot_data_column(data, "Application.Channel", "Interest.Rate.at.Origination") + 
+  labs(title= "The Effect of Application Channel", x= "Application Channel", 
+       y = "Interest Rate in %") + 
+  scale_x_discrete(labels = c('ULDD Retail \n Origination', 
+                              'ULDD Broker \n Origination', 'Other'))
+```
+
+#### Occupancy Code
+
+```{r Occupancy Code, warning=FALSE, message=FALSE, eval=T, fig.align = 'center'}
+plot_data_column(data, "Occupancy.Code", "Interest.Rate.at.Origination") + 
+  labs(title= "The Effect of Occupancy", x= "Occupancy", 
+       y = "Interest Rate in %") + 
+  scale_x_discrete(labels = c('Principal Residence / \n Owner-Occupied Property', 
+                              'Second Home', 'Investment Property'))
+```
+
+#### Property Type
+
+```{r Property Type, warning=FALSE, message=FALSE, eval=T, fig.align = 'center'}
+plot_data_column(data, "Property.Type", "Interest.Rate.at.Origination") + 
+  labs(title= "The Effect of Property Type", x= "Property Type", 
+       y = "Interest Rate in %") + 
+  scale_x_discrete(labels = c('One to Four-Family \n (other than manufactured housing)', 
+                              'Manufactured \n Housing'))
+```
+
+It can be observed that some factors seem to have a clear influence on the interest rate. Furthermore, when comparing the different boxplot graphs with one another it can be conducted that some variables in general seem to have more of an influence than others. 
+
+Before coming to a conclusion as to which of the variables have the highest influence, further analysis has to be conducted.
+
+### {-}
+
+## **Finding 2**
+
+After finding out, that some variables indeed have an influence in the interest rate, we now aim at answering the initial research question:
+
+**Which non-economic factors have the highest influence on the interest rate?**
+
+Therefore, we need a criterion to determine the amount of influence. We chose the range minimum and maximum values between the factors of a variable as the criterion. This number gives insight as to how much the interest rate can vary considering a certain variable. The higher this range the higher is the possible influence on the interest rate. The below plot provides an overview about the variable and their possible influence.
+
+
+```{r, warning=FALSE}
+# Number of borrowers
+a <- data %>% filter(Number.of.Borrowers == 1 | Number.of.Borrowers == 2)
+b <- data %>% filter(Number.of.Borrowers == 3 | Number.of.Borrowers == 4)
+numberofborrower_diff <- mean(b$Interest.Rate.at.Origination) - mean(a$Interest.Rate.at.Origination)
+
+#"Borrower.Race1"  
+asian <- data %>% filter(Borrower.Race1 == 2)
+black <- data %>% filter(Borrower.Race1 == 3)
+race_diff <- mean(black$Interest.Rate.at.Origination) - mean(asian$Interest.Rate.at.Origination)
+
+#"Borrower.Ethnicity"
+n_hispanic <- data %>% filter(Borrower.Ethnicity == 2)
+hispanic <- data %>% filter(Borrower.Ethnicity == 1)
+ethnicity_diff <- mean(hispanic$Interest.Rate.at.Origination) - mean(n_hispanic$Interest.Rate.at.Origination)
+
+#"Borrower.Gender"
+male <- data %>% filter(Borrower.Gender == 1)
+female <- data %>% filter(Borrower.Gender == 2)
+gender_diff <- mean(female$Interest.Rate.at.Origination) - mean(male$Interest.Rate.at.Origination)
+
+
+#"Age.of.Borrower"
+young_old <- data %>% filter(Age.of.Borrower == 1 | Age.of.Borrower == 7)
+middle <- data %>% filter(Age.of.Borrower == 2:6)
+age_diff <- mean(young_old$Interest.Rate.at.Origination) - mean(middle$Interest.Rate.at.Origination)
+
+#"Borrower.Age.62.or.older"
+younger <- data %>% filter(Borrower.Age.62.or.older == 0)
+older <- data %>% filter(Borrower.Age.62.or.older == 1)
+sixtytwo_diff <- mean(older$Interest.Rate.at.Origination) - mean(younger$Interest.Rate.at.Origination)
+
+
+#"Rural.Census.Tract"
+non_rural <- data %>% filter(Rural.Census.Tract == 0)
+rural <- data %>% filter(Rural.Census.Tract == 1)
+rural_diff <- mean(rural$Interest.Rate.at.Origination) - mean(non_rural$Interest.Rate.at.Origination)
+
+#"metropolitan_area"
+non_metropol <- data %>% filter(metropolitan_area == 0)
+metropol <- data %>% filter(metropolitan_area == 1)
+metropol_diff <- mean(non_metropol$Interest.Rate.at.Origination) - mean(metropol$Interest.Rate.at.Origination)
+
+#"Purpose.of.Loan"
+home_improvement <- data %>% filter(Purpose.of.Loan == 4)
+refi_not_cashout <- data %>% filter(Purpose.of.Loan == 2)
+purpose_diff <- mean(home_improvement$Interest.Rate.at.Origination) - mean(refi_not_cashout$Interest.Rate.at.Origination)
+
+#"Application.Channel"
+retail_other <- data %>% filter(Application.Channel == 1 | Application.Channel == 3)
+broker <- data %>% filter(Application.Channel == 2)
+app_channel_diff <- mean(retail_other$Interest.Rate.at.Origination) - mean(broker$Interest.Rate.at.Origination)
+
+#"Occupancy.Code"
+investment <- data %>% filter(Occupancy.Code == 3)
+as_home <- data %>% filter(Occupancy.Code == 1 | Occupancy.Code == 2)
+occupancy_type_diff <- mean(investment$Interest.Rate.at.Origination) - mean(as_home$Interest.Rate.at.Origination)
+
+#"Property.Type"
+manufactured_housing <- data %>% filter(Property.Type == 2)
+not_manufactured <- data %>% filter(Property.Type == 1)
+property_diff <- mean(manufactured_housing$Interest.Rate.at.Origination) - mean(not_manufactured$Interest.Rate.at.Origination)
+```
+
+```{r, warning=FALSE}
+Difference <- c("Number of Borrower", "Borrower's Race", "Borrower's Ethnicity", "Gender", 
+                  "Age", "Age 62", "Location: Rural", "Location: Metropol", "Purpose of Loan", 
+                  "Application Channel", "Occupancy Type", "Property Type")
+Interest_Difference <- c(numberofborrower_diff, race_diff, ethnicity_diff, gender_diff,
+                   age_diff, sixtytwo_diff, rural_diff, metropol_diff, purpose_diff, 
+                   app_channel_diff, occupancy_type_diff, property_diff)
+
+df <- data.frame(Difference, Interest_Difference)
+df$Interest_Difference <- round(df$Interest_Difference,2)
+df <- arrange(df, desc(Interest_Difference))
+```
+
+```{r, warning=FALSE}
+ggplot(df, aes(x=Interest_Difference, y = Difference)) + geom_point(color = "red", size = 3) + 
+  labs(title= "The difference of Interest Rates between different values of given variables", 
+       x= "Interest Rate Difference", 
+       y = "Non-Economic Factor")
+```
+
+To provide insight even better we ranked the variables by their possible influence to be able to answer our research question.
+
+```{r, warning=FALSE}
+gt(df) %>% tab_header(title = "Table: The difference of Interest Rates \n 
+                      between different values of given variables") %>% 
+  cols_label(Difference = md("**Variable**"), 
+             Interest_Difference = md("**Interest Difference**"))
+```
+
+# **Conclusion**
+
+At the beginning of our journey, we were curious to find out about the influence of non-economic factors on the interest rate for home mortgages. In particular, our goal was to determine which of those factors have the highest influence on the interest rate. 
+
+Our analysis started by exploring the data we received with the 10-Step-Model presented to us during this seminar. To provide you with a better idea of our analysis we also presented some difficulties we stumbled upon during this process as well as the way we handled these challenges.
+
+Finally, we presented the two most important findings, namely the different non-economic variables and their influence on the interest rate as well as their ranking.
+
+In conclusion, we can say that Purpose of Loan, Occupancy Type and Property Type seem to have the highest influence on the interest rate of home mortgages. At this point it is very important to note that with the data and time available we could not definitively answer if those factors were the causation of a change in the interest rates or if they just correlate with them. 
+
+This is where we hope to have inspired you to maybe conduct further research in this area. Hopefully, this presentation was insightful and interesting to you.
+
+Thank you for taking this journey with us! 
